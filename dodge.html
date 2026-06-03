@@ -149,7 +149,7 @@ function sizePad() {
   drawPad();
 }
 sizeStage();
-if (IS_TOUCH) sizePad();
+// 注意：初次 sizePad() 喺檔案底部、joystick 定義之後先叫（drawPad 會用到 joystick）
 window.addEventListener('resize', () => { sizeStage(); if (IS_TOUCH) sizePad(); });
 
 // ---- 遊戲狀態 ----
@@ -512,6 +512,7 @@ startBtn.addEventListener('click', start);
 
 // 初次畫一格畫面
 draw();
+if (IS_TOUCH) sizePad();   // 此時 joystick 已定義，drawPad 先用得
 </script>
 </body>
 </html>

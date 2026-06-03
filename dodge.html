@@ -115,7 +115,7 @@ const pad = document.getElementById('pad');
 const pctx = pad.getContext('2d');
 
 // ---- 版本 ----
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 document.getElementById('ver').textContent = 'v' + VERSION;
 
 // ---- 觸控裝置偵測（決定要唔要顯示虛擬搖桿）----
@@ -284,9 +284,9 @@ function spawnBullet() {
   else if (side === 2) { x = Math.random()*W; y = H+margin; }
   else { x = -margin; y = Math.random()*H; }
 
-  // 速度隨時間增加（前期慢，方便閃避）
+  // 速度隨時間增加（整體偏慢，靠數量逼人，營造「拉子彈」感覺）
   const t = elapsed;
-  const speed = 70 + Math.min(150, t * 4) + Math.random()*30;
+  const speed = 55 + Math.min(105, t * 1.8) + Math.random()*25;
   // 瞄準玩家，加上散射偏差
   let ang = Math.atan2(player.y - y, player.x - x);
   ang += (Math.random() - 0.5) * 0.5;
@@ -301,10 +301,16 @@ function spawnBullet() {
 
 // 偶爾來個環形彈幕，增加「四方八面」感覺
 function spawnRing() {
-  const cx = Math.random()*W, cy = Math.random()*H;
-  // 數量隨時間增加：起初約 10 粒，慢慢加到上限 ~22
-  const n = Math.min(22, 10 + Math.floor((elapsed - 18) / 5));
-  const speed = 60 + Math.min(110, elapsed*3);
+  // 喺距離玩家最少 minDist 嘅地方開花，唔好喺貼身位爆，俾玩家有空間避
+  const minDist = Math.min(180, Math.min(W, H) * 0.5);
+  let cx, cy, tries = 0;
+  do {
+    cx = Math.random()*W; cy = Math.random()*H; tries++;
+  } while (Math.hypot(cx - player.x, cy - player.y) < minDist && tries < 25);
+  // 數量隨時間增加：起初約 10 粒，慢慢加到上限 ~24
+  const n = Math.min(24, 10 + Math.floor((elapsed - 25) / 6));
+  // 慢速，俾玩家「拉子彈」式慢慢閃
+  const speed = 50 + Math.min(85, elapsed*1.6);
   const base = Math.random()*Math.PI*2;
   for (let i = 0; i < n; i++) {
     const ang = base + (i/n) * Math.PI*2;
@@ -402,17 +408,17 @@ function loop(now) {
     player.y += (player.ty - player.y) * Math.min(1, dt * 18);
   }
 
-  // 漸進式難度：一開始好疏（約 1 粒/秒），越打越密，目標一般人捱到 ~30s
-  // 生成間隔由 1.1s 線性收窄到 0.18s（約 30s 到頂）；改下面三個數就可調手感
-  const interval = Math.max(0.18, 1.1 - elapsed * 0.031);
+  // 漸進式難度：一開始好疏（約 1 粒/秒），慢慢越打越密，目標一般人捱到 ~60s
+  // 彈速偏慢但數量多 → 生成間隔由 1.0s 線性收窄到 0.12s（約 55s 到頂）
+  const interval = Math.max(0.12, 1.0 - elapsed * 0.016);
   spawnTimer += dt;
   while (spawnTimer >= interval) {
     spawnTimer -= interval;
     spawnBullet();
   }
-  // 環形彈幕：18s 後先出現，之後每 7s 一次（前期唔好咁快爆滿）
+  // 環形彈幕：25s 後先出現，之後每 8s 一次（中心會避開玩家，見 spawnRing）
   ringTimer += dt;
-  if (elapsed > 18 && ringTimer > 7) { ringTimer = 0; spawnRing(); }
+  if (elapsed > 25 && ringTimer > 8) { ringTimer = 0; spawnRing(); }
 
   // 更新子彈
   const margin = 40;

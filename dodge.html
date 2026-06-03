@@ -115,7 +115,7 @@ const pad = document.getElementById('pad');
 const pctx = pad.getContext('2d');
 
 // ---- 版本 ----
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 document.getElementById('ver').textContent = 'v' + VERSION;
 
 // ---- 觸控裝置偵測（決定要唔要顯示虛擬搖桿）----
@@ -285,8 +285,9 @@ function spawnBullet() {
   else { x = -margin; y = Math.random()*H; }
 
   // 速度隨時間增加（整體偏慢，靠數量逼人，營造「拉子彈」感覺）
+  // 斜率放緩、~117s 先到頂，配合密度一齊慢慢升
   const t = elapsed;
-  const speed = 55 + Math.min(105, t * 1.8) + Math.random()*25;
+  const speed = 55 + Math.min(105, t * 0.9) + Math.random()*25;
   // 瞄準玩家，加上散射偏差
   let ang = Math.atan2(player.y - y, player.x - x);
   ang += (Math.random() - 0.5) * 0.5;
@@ -307,10 +308,10 @@ function spawnRing() {
   do {
     cx = Math.random()*W; cy = Math.random()*H; tries++;
   } while (Math.hypot(cx - player.x, cy - player.y) < minDist && tries < 25);
-  // 數量隨時間增加：起初約 10 粒，慢慢加到上限 ~24
-  const n = Math.min(24, 10 + Math.floor((elapsed - 25) / 6));
+  // 數量隨時間慢慢增加：起初約 9 粒，慢慢加到上限 ~20
+  const n = Math.min(20, 9 + Math.floor((elapsed - 30) / 9));
   // 慢速，俾玩家「拉子彈」式慢慢閃
-  const speed = 50 + Math.min(85, elapsed*1.6);
+  const speed = 50 + Math.min(80, elapsed*1.1);
   const base = Math.random()*Math.PI*2;
   for (let i = 0; i < n; i++) {
     const ang = base + (i/n) * Math.PI*2;
@@ -408,17 +409,18 @@ function loop(now) {
     player.y += (player.ty - player.y) * Math.min(1, dt * 18);
   }
 
-  // 漸進式難度：一開始好疏（約 1 粒/秒），慢慢越打越密，目標一般人捱到 ~60s
-  // 彈速偏慢但數量多 → 生成間隔由 1.0s 線性收窄到 0.12s（約 55s 到頂）
-  const interval = Math.max(0.12, 1.0 - elapsed * 0.016);
+  // 漸進式難度：直接用「子彈/秒」線性緩升，避免後段斷崖式爆難
+  // 由 1 粒/秒 慢慢升到 6 粒/秒（約 125s≈2 分鐘先到頂），熟手可以玩耐啲
+  const rate = Math.min(6.0, 1.0 + elapsed * 0.04);
+  const interval = 1 / rate;
   spawnTimer += dt;
   while (spawnTimer >= interval) {
     spawnTimer -= interval;
     spawnBullet();
   }
-  // 環形彈幕：25s 後先出現，之後每 8s 一次（中心會避開玩家，見 spawnRing）
+  // 環形彈幕：30s 後先出現，之後每 8s 一次（中心會避開玩家，見 spawnRing）
   ringTimer += dt;
-  if (elapsed > 25 && ringTimer > 8) { ringTimer = 0; spawnRing(); }
+  if (elapsed > 30 && ringTimer > 8) { ringTimer = 0; spawnRing(); }
 
   // 更新子彈
   const margin = 40;

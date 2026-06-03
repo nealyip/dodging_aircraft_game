@@ -143,8 +143,10 @@ cv.addEventListener('mousemove', e => { inputMode = 'pointer'; setTarget(e.clien
 
 // ---- 手機：虛擬搖桿（十字方向，相對拖動）----
 // 一篤落去嗰點就係中心，手指上下左右拉，飛機就同方向郁，唔會即刻飛去手指位
-const JOY_MAX = 55;          // 搖桿最大拉動半徑（px）
-const JOY_DEAD = 6;          // 死區，避免輕觸時飄移
+const JOY_MAX = 42;          // 搖桿最大拉動半徑（px）— 細啲＝拉少少就到頂速，更靈敏
+const JOY_DEAD = 3;          // 死區，避免輕觸時飄移
+const JOY_SPEED = 640;       // 搖桿頂速（px/秒）— 比鍵盤快，貼近滑鼠手感
+const JOY_CURVE = 0.6;       // 反應曲線（<1：放大細幅度拖動，細拉都靈）
 const joystick = { active:false, ax:0, ay:0, dx:0, dy:0 };
 function canvasPos(clientX, clientY) {
   const rect = cv.getBoundingClientRect();
@@ -320,11 +322,14 @@ function loop(now) {
     player.y = Math.max(0, Math.min(H, player.y + dy * KEY_SPEED * dt));
     player.tx = player.x; player.ty = player.y;
   } else if (inputMode === 'joystick') {
-    // 虛擬搖桿：拉動幅度 = 速度比例（細拉慢、盡拉到頂速）
-    if (joystick.active && Math.hypot(joystick.dx, joystick.dy) > JOY_DEAD) {
-      const nx = joystick.dx / JOY_MAX, ny = joystick.dy / JOY_MAX;   // -1..1
-      player.x = Math.max(0, Math.min(W, player.x + nx * KEY_SPEED * dt));
-      player.y = Math.max(0, Math.min(H, player.y + ny * KEY_SPEED * dt));
+    // 虛擬搖桿：方向 = 拉動方向；速度 = 拉動幅度經反應曲線放大（細拉都靈，盡拉到頂速）
+    const mag = Math.hypot(joystick.dx, joystick.dy);
+    if (joystick.active && mag > JOY_DEAD) {
+      const ux = joystick.dx / mag, uy = joystick.dy / mag;          // 單位方向
+      const ratio = Math.min(1, mag / JOY_MAX);                      // 0..1
+      const scale = Math.pow(ratio, JOY_CURVE) * JOY_SPEED;          // 曲線放大後嘅速度
+      player.x = Math.max(0, Math.min(W, player.x + ux * scale * dt));
+      player.y = Math.max(0, Math.min(H, player.y + uy * scale * dt));
     }
     player.tx = player.x; player.ty = player.y;
   } else {

@@ -85,7 +85,7 @@
     <div id="overlay">
       <h1>彈幕避彈</h1>
       <p>操控飛機，閃避從四方八面射埋嚟嘅子彈。<br>撐得越耐越勁，難度會逐漸提升。</p>
-      <p class="hint">電腦：WASD / 方向鍵 或 滑鼠　|　手機：手指拖動</p>
+      <p class="hint">電腦：WASD / 方向鍵 或 滑鼠　|　手機：篤住畫面，手指上下左右拉郁飛機</p>
       <button id="startBtn">開始遊戲</button>
       <p class="hint">或撳 Space / Enter 開始</p>
     </div>
@@ -140,8 +140,36 @@ function setTarget(clientX, clientY) {
   player.ty = Math.max(0, Math.min(H, clientY - rect.top));
 }
 cv.addEventListener('mousemove', e => { inputMode = 'pointer'; setTarget(e.clientX, e.clientY); });
-cv.addEventListener('touchstart', e => { e.preventDefault(); inputMode = 'pointer'; setTarget(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
-cv.addEventListener('touchmove',  e => { e.preventDefault(); inputMode = 'pointer'; setTarget(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+
+// ---- 手機：虛擬搖桿（十字方向，相對拖動）----
+// 一篤落去嗰點就係中心，手指上下左右拉，飛機就同方向郁，唔會即刻飛去手指位
+const JOY_MAX = 55;          // 搖桿最大拉動半徑（px）
+const JOY_DEAD = 6;          // 死區，避免輕觸時飄移
+const joystick = { active:false, ax:0, ay:0, dx:0, dy:0 };
+function canvasPos(clientX, clientY) {
+  const rect = cv.getBoundingClientRect();
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+function joyStart(t) {
+  const p = canvasPos(t.clientX, t.clientY);
+  joystick.active = true;
+  joystick.ax = p.x; joystick.ay = p.y;
+  joystick.dx = 0;   joystick.dy = 0;
+  inputMode = 'joystick';
+}
+function joyMove(t) {
+  if (!joystick.active) return;
+  const p = canvasPos(t.clientX, t.clientY);
+  let dx = p.x - joystick.ax, dy = p.y - joystick.ay;
+  const len = Math.hypot(dx, dy);
+  if (len > JOY_MAX) { dx = dx / len * JOY_MAX; dy = dy / len * JOY_MAX; }  // clamp 喺圈內
+  joystick.dx = dx; joystick.dy = dy;
+}
+function joyEnd() { joystick.active = false; joystick.dx = 0; joystick.dy = 0; }
+cv.addEventListener('touchstart',  e => { e.preventDefault(); joyStart(e.touches[0]); }, {passive:false});
+cv.addEventListener('touchmove',   e => { e.preventDefault(); joyMove(e.touches[0]); }, {passive:false});
+cv.addEventListener('touchend',    e => { e.preventDefault(); joyEnd(); }, {passive:false});
+cv.addEventListener('touchcancel', e => { e.preventDefault(); joyEnd(); }, {passive:false});
 
 // ---- 鍵盤：WASD / 方向鍵 ----
 let inputMode = 'pointer';          // 'pointer' 跟滑鼠/觸控；'keyboard' 跟鍵盤
@@ -291,6 +319,14 @@ function loop(now) {
     player.x = Math.max(0, Math.min(W, player.x + dx * KEY_SPEED * dt));
     player.y = Math.max(0, Math.min(H, player.y + dy * KEY_SPEED * dt));
     player.tx = player.x; player.ty = player.y;
+  } else if (inputMode === 'joystick') {
+    // 虛擬搖桿：拉動幅度 = 速度比例（細拉慢、盡拉到頂速）
+    if (joystick.active && Math.hypot(joystick.dx, joystick.dy) > JOY_DEAD) {
+      const nx = joystick.dx / JOY_MAX, ny = joystick.dy / JOY_MAX;   // -1..1
+      player.x = Math.max(0, Math.min(W, player.x + nx * KEY_SPEED * dt));
+      player.y = Math.max(0, Math.min(H, player.y + ny * KEY_SPEED * dt));
+    }
+    player.tx = player.x; player.ty = player.y;
   } else {
     player.x += (player.tx - player.x) * Math.min(1, dt * 18);
     player.y += (player.ty - player.y) * Math.min(1, dt * 18);
@@ -365,6 +401,52 @@ function draw() {
 
   // 玩家飛機
   drawPlane(player.x, player.y);
+
+  // 手機虛擬搖桿
+  if (inputMode === 'joystick' && joystick.active) drawJoystick();
+}
+
+// ---- 虛擬搖桿繪圖（十字方向 + 搖桿頭）----
+function drawJoystick() {
+  const { ax, ay, dx, dy } = joystick;
+  ctx.save();
+  // 底盤外圈
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(95,208,255,0.35)';
+  ctx.beginPath();
+  ctx.arc(ax, ay, JOY_MAX, 0, Math.PI*2);
+  ctx.stroke();
+  // 十字方向箭嘴（上下左右）
+  ctx.fillStyle = 'rgba(191,234,255,0.6)';
+  const off = JOY_MAX - 4;
+  drawArrow(ax, ay - off, 0);            // 上
+  drawArrow(ax, ay + off, Math.PI);      // 下
+  drawArrow(ax - off, ay, -Math.PI/2);   // 左
+  drawArrow(ax + off, ay, Math.PI/2);    // 右
+  // 搖桿頭
+  const g = ctx.createRadialGradient(ax+dx, ay+dy, 0, ax+dx, ay+dy, 22);
+  g.addColorStop(0, 'rgba(95,208,255,0.9)');
+  g.addColorStop(1, 'rgba(95,208,255,0.12)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(ax+dx, ay+dy, 20, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawArrow(px, py, rot) {
+  const a = 9;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  ctx.moveTo(0, -a);
+  ctx.lineTo(a*0.8, a*0.6);
+  ctx.lineTo(-a*0.8, a*0.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlane(x, y) {

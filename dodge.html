@@ -143,11 +143,9 @@ cv.addEventListener('mousemove', e => { inputMode = 'pointer'; setTarget(e.clien
 
 // ---- 手機：虛擬搖桿（十字方向，相對拖動）----
 // 一篤落去嗰點就係中心，手指上下左右拉，飛機就同方向郁，唔會即刻飛去手指位
-const JOY_MAX = 42;          // 搖桿最大拉動半徑（px）— 細啲＝拉少少就到頂速，更靈敏
-const JOY_DEAD = 3;          // 死區，避免輕觸時飄移
-const JOY_SPEED = 640;       // 搖桿頂速（px/秒）— 比鍵盤快，貼近滑鼠手感
-const JOY_CURVE = 0.6;       // 反應曲線（<1：放大細幅度拖動，細拉都靈）
-const joystick = { active:false, ax:0, ay:0, dx:0, dy:0 };
+const JOY_R = 42;            // 搖桿視覺半徑（px）
+const JOY_GAIN = 1.0;        // 飛機位移 ÷ 手指位移（1.0 = 同手指郁一樣多；想快啲調大）
+const joystick = { active:false, lastX:0, lastY:0, fx:0, fy:0 };
 function canvasPos(clientX, clientY) {
   const rect = cv.getBoundingClientRect();
   return { x: clientX - rect.left, y: clientY - rect.top };
@@ -155,19 +153,23 @@ function canvasPos(clientX, clientY) {
 function joyStart(t) {
   const p = canvasPos(t.clientX, t.clientY);
   joystick.active = true;
-  joystick.ax = p.x; joystick.ay = p.y;
-  joystick.dx = 0;   joystick.dy = 0;
+  joystick.lastX = p.x; joystick.lastY = p.y;
+  joystick.fx = p.x;    joystick.fy = p.y;
   inputMode = 'joystick';
 }
 function joyMove(t) {
   if (!joystick.active) return;
   const p = canvasPos(t.clientX, t.clientY);
-  let dx = p.x - joystick.ax, dy = p.y - joystick.ay;
-  const len = Math.hypot(dx, dy);
-  if (len > JOY_MAX) { dx = dx / len * JOY_MAX; dy = dy / len * JOY_MAX; }  // clamp 喺圈內
-  joystick.dx = dx; joystick.dy = dy;
+  // 1:1 相對拖動：手指郁幾多，飛機就郁幾多（乘 JOY_GAIN 微調）
+  const dx = (p.x - joystick.lastX) * JOY_GAIN;
+  const dy = (p.y - joystick.lastY) * JOY_GAIN;
+  joystick.lastX = p.x; joystick.lastY = p.y;
+  joystick.fx = p.x;    joystick.fy = p.y;
+  player.x = Math.max(0, Math.min(W, player.x + dx));
+  player.y = Math.max(0, Math.min(H, player.y + dy));
+  player.tx = player.x; player.ty = player.y;
 }
-function joyEnd() { joystick.active = false; joystick.dx = 0; joystick.dy = 0; }
+function joyEnd() { joystick.active = false; }
 cv.addEventListener('touchstart',  e => { e.preventDefault(); joyStart(e.touches[0]); }, {passive:false});
 cv.addEventListener('touchmove',   e => { e.preventDefault(); joyMove(e.touches[0]); }, {passive:false});
 cv.addEventListener('touchend',    e => { e.preventDefault(); joyEnd(); }, {passive:false});
@@ -322,15 +324,7 @@ function loop(now) {
     player.y = Math.max(0, Math.min(H, player.y + dy * KEY_SPEED * dt));
     player.tx = player.x; player.ty = player.y;
   } else if (inputMode === 'joystick') {
-    // 虛擬搖桿：方向 = 拉動方向；速度 = 拉動幅度經反應曲線放大（細拉都靈，盡拉到頂速）
-    const mag = Math.hypot(joystick.dx, joystick.dy);
-    if (joystick.active && mag > JOY_DEAD) {
-      const ux = joystick.dx / mag, uy = joystick.dy / mag;          // 單位方向
-      const ratio = Math.min(1, mag / JOY_MAX);                      // 0..1
-      const scale = Math.pow(ratio, JOY_CURVE) * JOY_SPEED;          // 曲線放大後嘅速度
-      player.x = Math.max(0, Math.min(W, player.x + ux * scale * dt));
-      player.y = Math.max(0, Math.min(H, player.y + uy * scale * dt));
-    }
+    // 1:1 拖動嘅實際位移喺 touchmove 已即時套用，呢度唔需要再郁
     player.tx = player.x; player.ty = player.y;
   } else {
     player.x += (player.tx - player.x) * Math.min(1, dt * 18);
@@ -413,29 +407,26 @@ function draw() {
 
 // ---- 虛擬搖桿繪圖（十字方向 + 搖桿頭）----
 function drawJoystick() {
-  const { ax, ay, dx, dy } = joystick;
+  const { fx, fy } = joystick;
   ctx.save();
-  // 底盤外圈
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = 0.8;
+  // 外圈
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(95,208,255,0.35)';
   ctx.beginPath();
-  ctx.arc(ax, ay, JOY_MAX, 0, Math.PI*2);
+  ctx.arc(fx, fy, JOY_R, 0, Math.PI*2);
   ctx.stroke();
   // 十字方向箭嘴（上下左右）
   ctx.fillStyle = 'rgba(191,234,255,0.6)';
-  const off = JOY_MAX - 4;
-  drawArrow(ax, ay - off, 0);            // 上
-  drawArrow(ax, ay + off, Math.PI);      // 下
-  drawArrow(ax - off, ay, -Math.PI/2);   // 左
-  drawArrow(ax + off, ay, Math.PI/2);    // 右
-  // 搖桿頭
-  const g = ctx.createRadialGradient(ax+dx, ay+dy, 0, ax+dx, ay+dy, 22);
-  g.addColorStop(0, 'rgba(95,208,255,0.9)');
-  g.addColorStop(1, 'rgba(95,208,255,0.12)');
-  ctx.fillStyle = g;
+  const off = JOY_R - 4;
+  drawArrow(fx, fy - off, 0);            // 上
+  drawArrow(fx, fy + off, Math.PI);      // 下
+  drawArrow(fx - off, fy, -Math.PI/2);   // 左
+  drawArrow(fx + off, fy, Math.PI/2);    // 右
+  // 中心點（手指位置）
+  ctx.fillStyle = 'rgba(95,208,255,0.55)';
   ctx.beginPath();
-  ctx.arc(ax+dx, ay+dy, 20, 0, Math.PI*2);
+  ctx.arc(fx, fy, 5, 0, Math.PI*2);
   ctx.fill();
   ctx.restore();
 }
